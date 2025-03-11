@@ -74,7 +74,7 @@ services:
     entrypoint: >
       sh -c "/usr/bin/mc config host add myminio http://minio:9000 minioadmin minioadmin &&
       /usr/bin/mc mb --ignore-existing myminio/photos &&
-      /usr/bin/mc policy set download myminio/photos"
+      /usr/bin/mc anonymous set download myminio/photos"
 
   backend-tests:
     build: ./src/backend/
