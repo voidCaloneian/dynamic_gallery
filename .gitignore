@@ -1,0 +1,8 @@
+env/
+*.pytest_cache/
+*.pyc
+*__pycache__/
+*db.sqlite3
+*migrations/
+node_modules/
+src/frontend/node_modules/

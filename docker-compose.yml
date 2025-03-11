@@ -1,0 +1,110 @@
+version: "3.8"
+
+x-minio-env: &minio-env
+  MINIO_ENDPOINT: "http://minio:9000"
+  MINIO_ACCESS_KEY: "minioadmin"
+  MINIO_SECRET_KEY: "minioadmin"
+  MINIO_BUCKET_NAME: "photos"
+  MINIO_CUSTOM_DOMAIN: "localhost:9000/photos"
+
+services:
+  web:
+    build: ./src/backend/
+    working_dir: /app/src/backend/src/
+    command: /app/src/backend/docker-entrypoint.sh
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+      - minio
+    environment:
+      DEBUG: "1"
+      <<: *minio-env
+
+  worker:
+    build: ./src/backend/
+    working_dir: /app/src/backend/src/
+    command: celery -A core worker --loglevel=info
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
+      - minio
+    environment:
+      DEBUG: "1"
+      <<: *minio-env
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/0"
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6378:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio
+    command: minio server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_DOMAIN: minio
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  createbuckets:
+    image: minio/mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "/usr/bin/mc config host add myminio http://minio:9000 minioadmin minioadmin &&
+      /usr/bin/mc mb --ignore-existing myminio/photos &&
+      /usr/bin/mc policy set download myminio/photos"
+
+  backend-tests:
+    build: ./src/backend/
+    working_dir: /app/src/backend/
+    command: sh -c "/app/common_bash/wait-for-it.sh 7 && pytest"
+    volumes:
+      - .:/app
+    depends_on:
+      - web
+
+  frontend:
+    build: ./src/frontend
+    volumes:
+      - ./src/frontend:/app
+    ports:
+      - "3000:3000"
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+    command: npm start
+    depends_on:
+      - web
+
+  frontend-tests:
+    build: ./src/frontend
+    volumes:
+      - ./src/frontend:/app
+    working_dir: /app
+    command: sh -c "npm install && npm test"
+    depends_on:
+      - frontend
+
+volumes:
+  minio-data:
